@@ -1,0 +1,41 @@
+# ============================================================================
+# Web FFmpeg Studio · Git 忽略规则
+# ----------------------------------------------------------------------------
+# 原则：仅提交源码；FFmpeg 大体积二进制、运行期数据、依赖目录与构建产物均不入库。
+# ============================================================================
+
+# ---------- FFmpeg 二进制（单文件 150MB+，体积过大不入库，获取方式见 README） ----------
+/bin/
+
+# ---------- 运行期数据（上传输入 / 转码产物 / 临时工作区 / 任务缓存） ----------
+/storage/
+/backend/storage/
+/backend/runtime/
+
+# ---------- 依赖 ----------
+/backend/vendor/
+/frontend/node_modules/
+
+# ---------- 构建产物 ----------
+/frontend/dist/
+/frontend/*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
+
+# ---------- 环境变量与密钥 ----------
+.env
+**/.env
+!**/.env.example
+
+# ---------- 日志与测试临时文件 ----------
+*.log
+/backend/tests/tmp/
+/backend/tests/.phpunit.result.cache
+
+# ---------- 编辑器 / 操作系统 ----------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>5万行 CSV 高效并发导入与实时看板</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; padding: 40px; }
+        .card { background: #fff; border-radius: 8px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 600px; margin: 0 auto; }
+        .progress-bar-bg { background: #e9ecef; border-radius: 20px; height: 24px; overflow: hidden; margin: 20px 0; }
+        .progress-bar-fill { background: linear-gradient(90deg, #4caf50, #81c784); height: 100%; width: 0%; transition: width 0.1s ease; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; }
+        .stat-item { background: #f8f9fa; padding: 15px; border-radius: 6px; text-align: center; }
+        .stat-value { font-size: 20px; font-weight: bold; color: #333; }
+        .stat-label { font-size: 12px; color: #6c757d; }
+        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; width: 100%; }
+        button:disabled { background: #ccc; }
+        #log { font-family: monospace; font-size: 12px; background: #212529; color: #f8f9fa; padding: 15px; border-radius: 6px; height: 120px; overflow-y: auto; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>📊 CSV 海量数据并发导入看板</h2>
+    <p style="color: #666; font-size: 14px;">测试目标：50,000 行 CSV 文件 (利用 Swoole 协程 + WebSocket 实时推送)</p>
+
+    <button id="startBtn" onclick="startImport()">🚀 开始处理与导入</button>
+
+    <div class="progress-bar-bg">
+        <div id="progressFill" class="progress-bar-fill"></div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-item">
+            <div id="percentText" class="stat-value">0%</div>
+            <div class="stat-label">当前进度</div>
+        </div>
+        <div class="stat-item">
+            <div id="processedText" class="stat-value">0 / 0</div>
+            <div class="stat-label">已处理行数</div>
+        </div>
+        <div class="stat-item">
+            <div id="speedText" class="stat-value">0 条/秒</div>
+            <div class="stat-label">实时吞吐率</div>
+        </div>
+        <div class="stat-item">
+            <div id="statusText" class="stat-value" style="color: #ff9800;">未开始</div>
+            <div class="stat-label">处理状态</div>
+        </div>
+    </div>
+
+    <div id="log">等待点击开始...<br></div>
+</div>
+
+<script>
+    let ws = null;
+
+    function appendLog(msg) {
+        const logDiv = document.getElementById('log');
+        logDiv.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function startImport() {
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('statusText').innerText = "连接中...";
+
+        // 1. 连接 Webman 监听的 8685 WebSocket 端口
+        ws = new WebSocket('ws://' + window.location.hostname + ':8685');
+
+        ws.onopen = function() {
+            appendLog('WebSocket 长连接建立成功！发送导入指令...');
+            document.getElementById('statusText').innerText = "处理中";
+            document.getElementById('statusText').style.color = "#007bff";
+
+            // 2. 发送开始导入指令
+            ws.send(JSON.stringify({
+                action: 'start_import',
+                file_name: 'divide_details.csv' // 指向文件
+            }));
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.event === 'progress') {
+                // 更新进度条和统计 UI
+                document.getElementById('progressFill').style.width = data.percent + '%';
+                document.getElementById('percentText').innerText = data.percent + '%';
+                document.getElementById('processedText').innerText = `${data.processed} / ${data.total}`;
+                document.getElementById('speedText').innerText = `${data.speed} 条/秒`;
+            } else if (data.event === 'completed') {
+                document.getElementById('progressFill').style.width = '100%';
+                document.getElementById('percentText').innerText = '100%';
+                document.getElementById('statusText').innerText = "已完成";
+                document.getElementById('statusText').style.color = "#4caf50";
+                appendLog(data.message);
+                ws.close();
+            } else if (data.event === 'error') {
+                appendLog('❌ 错误: ' + data.message);
+                document.getElementById('statusText').innerText = "失败";
+                document.getElementById('statusText').style.color = "#f44336";
+                document.getElementById('startBtn').disabled = false;
+            }
+        };
+
+        ws.onclose = function() {
+            appendLog('连接已断开。');
+        };
+    }
+</script>
+
+</body>
+</html>
