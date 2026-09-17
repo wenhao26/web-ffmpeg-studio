@@ -1,5 +1,10 @@
 # Web FFmpeg Studio
 
+![version](https://img.shields.io/badge/version-v1.0-blue.svg)
+![license](https://img.shields.io/badge/license-MIT-green.svg)
+
+> **当前版本：v1.0**
+>
 > 基于 **Vue 3 + Webman(Workerman) + FFmpeg** 的在线音视频转码工作台：上传即转、参数可视化、进度实时可见、产物在线预览下载。
 
 前后端分离，后端以独立进程池异步执行 FFmpeg，前端通过 **SSE** 接收实时转码进度与日志。
