@@ -1,0 +1,490 @@
+openapi: 3.0.3
+info:
+  title: Web FFmpeg Studio API
+  description: |
+    在线音视频转码工作台后端契约。所有 JSON 响应遵循统一信封
+    `{ code, message, data }`，HTTP 状态码与业务 `code` 同值。
+    本文件为机器可读契约的唯一事实源入口：改任何接口必须同步更新本文件
+    （见 AGENTS.md §6）。本服务面向本地工具场景，无认证。
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:8787
+    description: 本地 Webman 后端（Vite dev 通过 /api、/storage 代理转发）
+tags:
+  - name: media
+    description: 上传 / 探测 / 产物下载
+  - name: ffmpeg
+    description: 转码任务登记与状态
+paths:
+  /api/media/upload:
+    post:
+      tags: [media]
+      summary: 上传媒体文件
+      operationId: uploadMedia
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 文件本体（字段名必须为 file）
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: 上传成功
+                      data:
+                        $ref: '#/components/schemas/UploadResult'
+        '400':
+          description: 缺少 file 字段 / 超出 1GiB 上限 / MIME 不在白名单（InvalidFileException）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                code: 400
+                message: 请选择要上传的文件（表单字段名 file）
+                data: null
+        '500':
+          description: 服务端错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/media/probe:
+    post:
+      tags: [media]
+      summary: 探测媒体元数据（ffprobe）
+      operationId: probeMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file_id]
+              properties:
+                file_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: 探测成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ProbeResult'
+        '400':
+          description: file_id 缺失或无法解析为已上传文件
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: ffprobe 解析失败 / 无可用媒体流（ProbeException）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          probe_context:
+                            type: object
+                            description: 诊断上下文（exit_code、stderr 尾部等）
+              example:
+                code: 422
+                message: 媒体文件无法被解析（ffprobe 失败）
+                data:
+                  probe_context:
+                    exit_code: 1
+                    stderr: "..."
+        '500':
+          description: FFprobe 二进制缺失（BinaryNotFoundException）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/ffmpeg/execute:
+    post:
+      tags: [ffmpeg]
+      summary: 登记转码任务（异步）
+      description: |
+        校验参数并构建命令后仅登记任务（status=pending）即返回 task_id，
+        真正的 FFmpeg 执行由独立 task-worker 进程领取执行。
+        进度经 SSE `/stream` 推送，`/status` 为断线回退。
+      operationId: executeFfmpeg
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRequest'
+      responses:
+        '200':
+          description: 任务已登记
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: 任务已登记
+                      data:
+                        type: object
+                        required: [task_id, status]
+                        properties:
+                          task_id:
+                            type: string
+                            format: uuid
+                          status:
+                            type: string
+                            enum: [pending]
+        '400':
+          description: |
+            参数不合法（file_id 必填、output_format 白名单、InputSanitizer /
+            CommandBuilder 校验失败、请求体非 JSON 对象）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                code: 400
+                message: 参数 crf 的值 99 超出范围 [0, 51]
+                data: null
+        '500':
+          description: 二进制缺失 / 无法创建输出目录（ExecuteException 附 execute_context）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/ffmpeg/task/{taskId}/status:
+    get:
+      tags: [ffmpeg]
+      summary: 查询任务状态（SSE 断线回退）
+      operationId: getTaskStatus
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 当前任务快照
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TaskStatus'
+        '404':
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                code: 404
+                message: 任务不存在
+                data: null
+  /api/ffmpeg/task/{taskId}/stream:
+    get:
+      tags: [ffmpeg]
+      summary: SSE 实时进度流
+      description: |
+        服务端以 0.3s Timer 轮询任务 JSON 并推送：首轮全量历史日志，
+        此后仅增量日志与变化的进度；终态推送 complete/error 后关闭流。
+        无应用层心跳注释行。
+      operationId: streamTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: SSE 事件流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  事件名 progress / log / complete / error，data 为 JSON 字符串：
+                  progress: {"type":"progress","task_id":"...","progress":67.5,"speed":"2.5x","eta":"00:00:30"}
+                  log: {"type":"log","task_id":"...","line":"frame=..."}
+                  complete: {"type":"complete","task_id":"...","code":200,"data":{"command":"...","output":"...","file_url":"...","file_size":123}}
+                  error: {"type":"error","task_id":"...","code":500,"message":"...","data":{"command":"...","exit_code":1}}
+        '404':
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /storage/outputs/{taskId}/{filename}:
+    get:
+      tags: [media]
+      summary: 产物下载 / 在线播放
+      description: |
+        流式返回产物（支持 Range，适配 HLS 分片与视频拖动）。
+        taskId 必须为 UUID v4；filename 必须命中白名单
+        `output.(mp4|webm|mkv|mov)` / `output.m3u8` / `segment_XXXX.ts`。
+      operationId: downloadOutput
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^(output\.(mp4|webm|mkv|mov)|output\.m3u8|segment_\d{4}\.ts)$'
+      responses:
+        '200':
+          description: 文件流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: 非法 taskId / 非法文件名 / 产物不存在或已被清理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Envelope:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: integer
+          description: 与 HTTP 状态码同值；200 为成功
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          nullable: true
+    ErrorEnvelope:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: integer
+          enum: [400, 404, 422, 500, 504]
+        message:
+          type: string
+        data:
+          nullable: true
+          description: 错误附加上下文（probe_context / execute_context），通常为 null
+    UploadResult:
+      type: object
+      required: [file_id, filename, file_size, mime_type, storage_path]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+          description: 字节数，上限 1073741824（1 GiB）
+        mime_type:
+          type: string
+          example: video/mp4
+        storage_path:
+          type: string
+          description: 服务端相对存储路径（inputs 分区）
+    ProbeFormat:
+      type: object
+      required: [format_name, duration, bit_rate, size]
+      properties:
+        format_name:
+          type: string
+          example: mov,mp4,m4a,3gp,3g2,mj2
+        duration:
+          type: number
+          format: float
+          example: 90
+        bit_rate:
+          type: integer
+          example: 333614
+        size:
+          type: integer
+          format: int64
+    ProbeStream:
+      type: object
+      required: [index, type, codec]
+      properties:
+        index:
+          type: integer
+        type:
+          type: string
+          enum: [video, audio, unknown]
+        codec:
+          type: string
+          example: h264
+        width:
+          type: integer
+          description: 仅视频流
+        height:
+          type: integer
+          description: 仅视频流
+        fps:
+          type: number
+          description: 仅视频流；由 avg_frame_rate 分数归一化
+        color_space:
+          type: string
+          description: 仅视频流（pix_fmt）
+        channels:
+          type: integer
+          description: 仅音频流
+        sample_rate:
+          type: integer
+          description: 仅音频流
+    ProbeResult:
+      type: object
+      required: [format, streams]
+      properties:
+        format:
+          $ref: '#/components/schemas/ProbeFormat'
+        streams:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProbeStream'
+    ExecuteRequest:
+      type: object
+      required: [file_id, output_format]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+          description: 上传接口返回的输入文件标识
+        output_format:
+          type: string
+          enum: [mp4, webm, mkv, mov, hls]
+        video_codec:
+          type: string
+          enum: [libx264, libx265, libvpx-vp9, libaom-av1]
+        audio_codec:
+          type: string
+          enum: [aac, libmp3lame, libopus]
+        preset:
+          type: string
+          enum: [ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow]
+        crf:
+          type: integer
+          minimum: 0
+          maximum: 51
+        video_bitrate:
+          type: string
+          pattern: '^\d{1,9}[kKmMgG]?$'
+          example: 2500k
+        audio_bitrate:
+          type: string
+          pattern: '^\d{1,9}[kKmMgG]?$'
+          example: 128k
+        start_time:
+          type: string
+          pattern: '^\d{2}:\d{2}:\d{2}(\.\d{1,3})?$'
+          example: 00:00:10
+        end_time:
+          type: string
+          pattern: '^\d{2}:\d{2}:\d{2}(\.\d{1,3})?$'
+          example: 00:01:00
+        crop:
+          type: string
+          pattern: '^\d{1,6}:\d{1,6}(:\d{1,6}:\d{1,6})?$'
+          description: "w:h 或 w:h:x:y"
+          example: 1280:720:0:0
+        scale:
+          type: string
+          pattern: '^\d{1,6}:\d{1,6}$'
+          example: 1280:720
+        watermark_type:
+          type: string
+          enum: [image, text]
+          description: 无水印时省略该键（不可传 none）
+        watermark_text:
+          type: string
+          maxLength: 500
+        watermark_image:
+          type: string
+          description: watermark_type=image 时的图片 file_id
+        watermark_position:
+          type: string
+          enum: [top-left, top-right, bottom-left, bottom-right, center]
+        custom_args:
+          type: string
+          maxLength: 500
+          description: |
+            专家参数，逐 token 校验：仅放行 CommandBuilder::CUSTOM_TOKEN_WHITELIST
+            内的开关（如 -threads/-movflags），值经 escapeshellarg；其余一律 400。
+    TaskStatus:
+      type: object
+      required: [task_id, status, progress, speed, eta, logs, output_url, error, exit_code]
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        progress:
+          type: number
+          format: float
+          description: 0~100
+        speed:
+          type: string
+          description: FFmpeg 速度，如 2.5x；未解析到时为空串
+        eta:
+          type: string
+          description: 预计剩余 HH:MM:SS；未知为空串
+        logs:
+          type: array
+          description: 最近 100 行 stderr 进度日志
+          items:
+            type: string
+        output_url:
+          type: string
+          nullable: true
+          description: 完成后的产物访问路径，如 /storage/outputs/{taskId}/output.mp4
+        error:
+          type: string
+          description: 失败原因；成功时为空串
+        exit_code:
+          type: integer
+          nullable: true
+          description: FFmpeg 退出码；未结束时为 null

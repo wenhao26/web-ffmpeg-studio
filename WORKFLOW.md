@@ -1,9 +1,21 @@
 # AI Vibe Coding Workflow & Iteration Guide: Web FFmpeg Studio
 
+> **状态（2026-09）**：Phase 1~5 已全部完成并发布 **v1.0**。本文件保留为
+> 迭代方法论与历史路线图；日常开发入口见根目录 [`AGENTS.md`](AGENTS.md)。
+
 ## 1. 核心工作流原则
 本项目采用 **AI Vibe Coding（人机协同敏捷开发）** 模式。为保证企业级代码质量、防止 AI 盲目瞎写或偏离架构，必须严格遵守以下原则：
 - **小步快跑，逐个确认**：严禁一次性让 AI 生成整个项目。必须按照模块分阶段推进，**每个模块写完后必须经过人工测试与代码审查确认无误，方可进入下一个模块**。
-- **契约优先**：在编写具体代码前，必须严格参照 `PRD.md`（产品需求）、`PROJECT.md`（架构与目录）以及 `.cursor/rules/` 下的代码安全规范。
+- **契约优先**：在编写具体代码前，必须严格参照 `AGENTS.md`（AI 总入口）、`PRD.md`（产品需求）、`openapi.yaml`（API 契约）、`PROJECT.md`（架构与目录）以及 `.cursor/rules/` 下的代码安全规范。
+
+### AI 迭代循环（每个任务必走）
+
+1. 读 `AGENTS.md`（含红线与架构速览）→ 相关 ADR 确认是否"故意设计"。
+2. 列 todo（每项带验收标准），**小步实现**。
+3. 跑 `AGENTS.md` §5 验证命令：`php backend/tests/unit/run.php` 与
+   `cd frontend && npm run build`，**全绿才算完成**。
+4. 过 `AGENTS.md` §7 审查 Checklist（含契约同步义务）。
+5. **请人工确认后再进下一步；未获明示不 commit / 不 push。**
 
 ---
 
@@ -32,7 +44,9 @@
 - **具体任务**：
   1. 实现文件上传及双重校验服务（MIME-type 与二进制头 Magic Number 校验）。
   2. 实现 `/api/media/probe` 接口（调用 FFprobe 解析音视频元数据并返回结构化 JSON）。
-  3. 实现 `/api/ffmpeg/execute` 接口（接收表单参数、生成并执行指令、返回执行结果及产物路径）。
+   3. 实现 `/api/ffmpeg/execute` 接口（接收 JSON 参数、白名单校验、
+      拼装命令并**登记异步任务**返回 `task_id`；实际执行由 task-worker
+      领取，进度经 SSE 推送——见 ADR-002/004）。
 
 ### Phase 3: 前端基础壳子与状态管理 (Frontend Core & Pinia)
 - **目标**：搭建 Vue 3 前端工程骨架与状态流。
@@ -51,9 +65,10 @@
 ### Phase 5: 执行终端、资产预览与清理机制 (Execution & Lifecycle)
 - **目标**：闭环整个系统。
 - **具体任务**：
-  1. 实现执行按钮、Loading 动画及标准错误日志（Stderr）终端模拟器。
-  2. 集成视频播放器与产物下载卡片。
-  3. 实现服务端的临时文件生命周期清理逻辑。
+  1. 实现执行按钮、Loading 动画及标准错误日志（Stderr）终端模拟器 →
+     `components/ProgressPanel.vue`。
+  2. 集成视频播放器与产物下载卡片 → `components/ResultCard.vue`。
+  3. 实现服务端的临时文件生命周期清理逻辑 → `CleanupService`（每小时 Timer）。
 
 ---
 
@@ -62,6 +77,8 @@
 在进行下一个阶段的开发时，向 AI 发起 Prompt 时建议遵循以下格式：
 
 > **示例 Prompt**：
-> "当前我们处于 `WORKFLOW.md` 的 **Phase 1：后端核心基建与安全服务**。
+> "当前我们处于 `WORKFLOW.md` 的 **Phase 1：后端核心基建与安全服务**
+> （开工前先读 `AGENTS.md`，遵守其红线、验证命令与审查 Checklist）。
 > 请严格遵守 `.cursor/rules/ffmpeg-backend.md` 中的安全规范（如严格类型声明、escapeshellarg 转义、超时控制），
-> 帮我编写 `CommandBuilder.php` 和 `ProcessRunner.php`。请一次只写这两个文件，并等待我的审查。"
+> 帮我编写 `CommandBuilder.php` 和 `ProcessRunner.php`。请一次只写这两个文件，
+> 完成后跑 `php backend/tests/unit/run.php` 与 `cd frontend && npm run build` 并等待我的审查。"

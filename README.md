@@ -70,8 +70,11 @@ web-ffmpeg-studio/
 │       └── api/                 # axios 实例与接口封装
 ├── bin/ffmpeg/                  # FFmpeg 二进制（windows / linux，不入库，见「FFmpeg 二进制获取」）
 ├── storage/                     # 运行期：inputs / outputs / temp（不提交）
-├── docs/                        # 需求文档
+├── docs/                        # 需求文档 + decisions/（ADR 架构决策）
+├── openapi.yaml                 # API 机器可读契约（改接口必同步）
+├── AGENTS.md / CLAUDE.md        # AI 协作总入口（及其薄壳）
 ├── PRD.md / PROJECT.md / STORAGE_POLICY.md / WORKFLOW.md
+├── CONTRIBUTING.md / CHANGELOG.md / LICENSE
 └── README.md
 ```
 
@@ -201,6 +204,23 @@ storage/
 
 ---
 
+## 九、AI 协作与文档索引
+
+- **AI 总入口**：[`AGENTS.md`](AGENTS.md)（红线 / 验证命令 / 审查 Checklist；`CLAUDE.md`、`.github/copilot-instructions.md` 为其薄壳）
+- **API 契约**：[`openapi.yaml`](openapi.yaml)
+- **架构决策**：[`docs/decisions/`](docs/decisions/)（ADR-001~004：文件型任务队列 / 双执行路径 / HLS 转义特例 / SSE 进度）
+- **贡献与版本**：[`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CHANGELOG.md`](CHANGELOG.md)
+- **CI**：push/PR 自动执行 `php -l` + 单测 + `npm run build`（`.github/workflows/ci.yml`）
+
+验证命令（全绿才算完成）：
+
+```bash
+php backend/tests/unit/run.php    # 后端单测（无需 vendor / FFmpeg）
+cd frontend && npm run build      # 前端类型检查 + 构建
+```
+
+---
+
 ## License
 
-本项目采用 [MIT License](backend/LICENSE)。
+本项目采用 [MIT License](LICENSE)。

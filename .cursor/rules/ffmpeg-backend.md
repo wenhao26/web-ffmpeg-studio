@@ -1,6 +1,6 @@
 ---
 description: Enterprise PHP 8.x backend coding rules, command security, binary path resolution, and process execution for FFmpeg integration.
-globs: ["backend/**/*.php", "app/**/*.php"]
+globs: ["backend/**/*.php"]
 alwaysApply: false
 ---
 
@@ -23,18 +23,12 @@ alwaysApply: false
 - **安全执行组件推荐**：建议优先使用成熟的进程管理组件（如 Symfony Process 组件或安全的底层 `proc_open` 封装），严禁无防护地直接调用高危的 `exec()` 或 `shell_exec()`。
 
 ## 4. 统一的响应结构契约 (Structured Response)
-后端所有涉及 FFmpeg 探测或执行的 API 控制器方法，必须返回标准统一的 JSON 结构：
+后端所有 API 控制器必须返回标准信封（HTTP 状态与业务 `code` 同值）：
 ```json
-{
-  "code": 200,          // 200 表示成功，非 200 表示业务或执行异常
-  "message": "success", // 状态描述
-  "data": {
-    "command": "...",   // 实际拼接并执行的原始 FFmpeg 命令
-    "output": "...",    // 进程标准错误或日志摘要
-    "file_url": "..."   // 处理成功后的产物访问路径（如有）
-  }
-}
+{ "code": 200, "message": "success", "data": {} }
 ```
+- `data` 的具体形状因接口而异（如 execute 返回 `task_id`/`status=pending`，status 返回进度与日志），**以根目录 `openapi.yaml` 为准**；改动响应结构必须同步该文件。
+- 业务异常统一抛 `App\Exception\*`，由全局 `support/exception/Handler` 映射为契约 JSON（400/422/500/504），控制器不自行 try/catch。
 
 ### 5. PHP 编码风格与注释规范 (Coding Style & Comments)
 - **现代特性与规范**：
