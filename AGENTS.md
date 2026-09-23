@@ -64,13 +64,13 @@ Get-ChildItem backend -Recurse -Filter *.php | Where-Object { $_.FullName -notma
 
 ## 6. 契约同步规则（防文档漂移）
 
-| 你改了… | 必须同步… |
-|---|---|
-| `backend/config/route.php` 或任一控制器响应结构 | `openapi.yaml` + `docs/项目需求.md` §2.2 |
-| `config/ffmpeg.php` 白名单/超时/存储策略 | `docs/项目需求.md` 对应节 + `STORAGE_POLICY.md`（如涉及存储） |
-| 新增架构级决策 | `docs/decisions/ADR-00N-*.md`（新建） |
-| 任何文档与代码冲突 | **改文档**（代码是事实） |
-| 对外可见的版本变化 | `CHANGELOG.md` |
+| 你改了…                                         | 必须同步…                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------- |
+| `backend/config/route.php` 或任一控制器响应结构 | `openapi.yaml` + `docs/项目需求.md` §2.2                      |
+| `config/ffmpeg.php` 白名单/超时/存储策略        | `docs/项目需求.md` 对应节 + `STORAGE_POLICY.md`（如涉及存储） |
+| 新增架构级决策                                  | `docs/decisions/ADR-00N-*.md`（新建）                         |
+| 任何文档与代码冲突                              | **改文档**（代码是事实）                                      |
+| 对外可见的版本变化                              | `CHANGELOG.md`                                                |
 
 ## 7. AI 代码审查 Checklist（每个改动集逐项自检后才可交付）
 
@@ -79,6 +79,7 @@ Get-ChildItem backend -Recurse -Filter *.php | Where-Object { $_.FullName -notma
 - [ ] 未改业务源码红线文件（本任务为文档/测试/CI 时：`git status` 确认 `backend/app`、`backend/config`、`frontend/src` 无变更）
 - [ ] 新增动态参数已过 `InputSanitizer` 白名单 + `CommandBuilder` 转义
 - [ ] PHP 保留 `declare(strict_types=1);`，PSR-12，命名规范（PascalCase 类 / camelCase 方法）
+- [ ] 赋值**不做等号对齐**：`$a = 1;`（单空格），禁止 `$a    = 1;` 补空格对齐
 - [ ] 注释只写 Why 不写 What；**无**机械化步骤注释（`// 1. xxx`）与复述型注释
 - [ ] 未触碰 `vendor` / `node_modules` / `bin` / `storage` / `.env`
 - [ ] 接口变更已同步 `openapi.yaml`；架构决策已落 ADR
@@ -86,7 +87,7 @@ Get-ChildItem backend -Recurse -Filter *.php | Where-Object { $_.FullName -notma
 
 ## 8. 风格速查
 
-- **PHP**：PSR-12、4 空格、`declare(strict_types=1)`、Service 层抛 `App\Exception\*`（由全局 `Handler` 统一转契约 JSON），控制器只做"参数提取 + 服务编排 + `ApiResponse` 包装"。
+- **PHP**：PSR-12、4 空格、`declare(strict_types=1)`、赋值单空格不做等号对齐（`$a = 1;`，禁止 `$a  = 1;` 补空格）、Service 层抛 `App\Exception\*`（由全局 `Handler` 统一转契约 JSON），控制器只做"参数提取 + 服务编排 + `ApiResponse` 包装"。
 - **前端**：`<script setup lang="ts">`、Composition API、Pinia、Tailwind、Naive UI；TS 严格（`noUnusedLocals/Parameters` 开启）；`npm run build` = `vue-tsc -b` + `vite build`。
 - **测试**：单测 = `backend/tests/unit/` 独立脚本（不依赖 composer/phpunit/二进制），断言失败抛异常、`run.php` 汇总退出码。
 - **契约**：所有 JSON 响应 = `{code, message, data}`；HTTP 状态与业务 `code` 同值。

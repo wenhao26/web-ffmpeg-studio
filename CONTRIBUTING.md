@@ -47,7 +47,7 @@ GitHub Actions（`.github/workflows/ci.yml`）会在 push/PR 时执行等价检�
 
 ## 5. 代码规范要点
 
-- PHP：PSR-12、4 空格、`declare(strict_types=1);`；注释写 Why 不写 What；
+- PHP：PSR-12、4 空格、`declare(strict_types=1);`；赋值单空格不做等号对齐（`$a = 1;`，禁止补空格对齐）；注释写 Why 不写 What；
   禁止机械化步骤注释（`// 1. xxx`）。
 - 前端：Vue 3 `<script setup lang="ts">`、Pinia、Tailwind、**Naive UI**
   （禁止 Element Plus / SCSS）。
